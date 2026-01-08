@@ -1,0 +1,585 @@
+<!-- tablero_entrenamiento.html -->
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Tablero de Entrenamiento (FEN)</title>
+
+  <!-- Chessboard.js CSS (CDN) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css" />
+
+  <style>
+    :root{
+      --bg:#0b0c10;
+      --card:#11131a;
+      --card2:#0f1117;
+      --text:#e9ecf1;
+      --muted:#a8b0bf;
+      --border:rgba(255,255,255,.10);
+      --shadow: 0 12px 30px rgba(0,0,0,.35);
+      --cta:#4f7cff;
+      --cta2:#2f60ff;
+      --danger:#ff4f6d;
+      --ok:#34d399;
+      --radius:16px;
+    }
+
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Helvetica Neue", sans-serif;
+      background: radial-gradient(1200px 800px at 20% 10%, rgba(79,124,255,.18), transparent 55%),
+                  radial-gradient(900px 700px at 90% 30%, rgba(52,211,153,.10), transparent 55%),
+                  var(--bg);
+      color:var(--text);
+      min-height:100svh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
+    }
+
+    .app{
+      width:min(1100px, 100%);
+      display:flex;
+      gap:20px;
+      align-items:stretch;
+      justify-content:center;
+      flex-wrap:wrap;
+    }
+
+    .card{
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      box-shadow: var(--shadow);
+      padding:18px;
+    }
+
+    .left{
+      flex: 0 1 560px;
+      display:flex;
+      flex-direction:column;
+      gap:14px;
+      align-items:center;
+      justify-content:center;
+    }
+
+    .right{
+      flex: 1 1 420px;
+      min-width:min(420px, 100%);
+      display:flex;
+      flex-direction:column;
+      gap:14px;
+      justify-content:center;
+    }
+
+    header{
+      width:100%;
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      padding-bottom:10px;
+      border-bottom:1px solid var(--border);
+      margin-bottom:6px;
+    }
+
+    header h1{
+      font-size:18px;
+      margin:0;
+      letter-spacing:.2px;
+    }
+    header p{
+      margin:4px 0 0 0;
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.35;
+    }
+
+    .headerActions{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      justify-content:flex-end;
+      flex-wrap:wrap;
+    }
+    .btn-mini{
+      padding:8px 10px;
+      font-size:12px;
+      border-radius:999px;
+    }
+
+    #boardWrap{
+      width: min(92vw, 520px);
+    }
+    #board{
+      width: 100%;
+      border-radius: 12px;
+      overflow:hidden; /* redondea el tablero */
+      box-shadow: 0 10px 22px rgba(0,0,0,.35);
+    }
+
+    .statusBar{
+      width:100%;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding:10px 12px;
+      border:1px solid var(--border);
+      border-radius:12px;
+      background: rgba(255,255,255,.03);
+    }
+
+    .statusText{
+      font-size:13px;
+      color:var(--muted);
+      margin:0;
+    }
+
+    .pill{
+      font-size:12px;
+      padding:6px 10px;
+      border:1px solid var(--border);
+      border-radius:999px;
+      color:var(--text);
+      background: rgba(255,255,255,.04);
+      user-select:none;
+      white-space:nowrap;
+    }
+
+    .controls{
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+
+    .row{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+
+    .label{
+      font-size:12px;
+      color:var(--muted);
+      margin:0 0 6px 2px;
+    }
+
+    .input{
+      width:100%;
+      padding:12px 12px;
+      border-radius:12px;
+      border:1px solid var(--border);
+      background: rgba(255,255,255,.03);
+      color:var(--text);
+      outline:none;
+      font-size:13px;
+    }
+    .input:focus{
+      border-color: rgba(79,124,255,.55);
+      box-shadow: 0 0 0 3px rgba(79,124,255,.18);
+    }
+
+    .btn{
+      appearance:none;
+      border:1px solid var(--border);
+      background: rgba(255,255,255,.04);
+      color:var(--text);
+      padding:11px 14px;
+      border-radius:12px;
+      font-weight:700;
+      letter-spacing:.2px;
+      cursor:pointer;
+      transition: transform .06s ease, background .2s ease, border-color .2s ease;
+      user-select:none;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:10px;
+    }
+    .btn:active{ transform: translateY(1px); }
+
+    .btn-cta{
+      background: linear-gradient(180deg, var(--cta), var(--cta2));
+      border-color: rgba(79,124,255,.65);
+    }
+    .btn-cta:hover{ filter: brightness(1.03); }
+
+    .btn-ghost:hover{ background: rgba(255,255,255,.06); }
+
+    .btn-danger{
+      background: rgba(255,79,109,.10);
+      border-color: rgba(255,79,109,.35);
+    }
+
+    .btn-wide{
+      width:100%;
+      padding:14px 16px;
+      font-size:14px;
+      border-radius:14px;
+    }
+
+    .hint{
+      font-size:12px;
+      color:var(--muted);
+      margin:0;
+      line-height:1.45;
+    }
+
+    .toast{
+      position:fixed;
+      left:50%;
+      bottom:18px;
+      transform: translateX(-50%);
+      background: rgba(17,19,26,.92);
+      border:1px solid var(--border);
+      box-shadow: var(--shadow);
+      color: var(--text);
+      padding:10px 12px;
+      border-radius: 999px;
+      font-size:12.5px;
+      opacity:0;
+      pointer-events:none;
+      transition: opacity .18s ease, transform .18s ease;
+    }
+    .toast.show{
+      opacity:1;
+      transform: translateX(-50%) translateY(-4px);
+    }
+
+    .errorBox{
+      display:none;
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid rgba(255,79,109,.35);
+      background: rgba(255,79,109,.10);
+      color: #ffd1da;
+      font-size:12.5px;
+      line-height:1.35;
+    }
+
+    @media (max-width: 940px){
+      .right{ min-width: 100%; }
+      #boardWrap{ width: min(92vw, 560px); }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <!-- IZQUIERDA: TABLERO -->
+    <section class="card left">
+      <div style="width:100%;">
+        <header>
+          <div>
+            <h1>Tablero de entrenamiento</h1>
+            <p>Arrastra y suelta piezas. Movimientos ilegales hacen <em>snapback</em>. Carga/extrae FEN en un clic.</p>
+          </div>
+          <div class="headerActions"><button class="btn btn-ghost btn-mini" id="pasteLoadBtn" type="button">📋 Pegar FEN y Cargar</button><span class="pill" id="fenShort">FEN listo</span></div>
+        </header>
+      </div>
+
+      <div id="boardWrap">
+        <div id="board"></div>
+      </div>
+
+      <div class="statusBar">
+        <p class="statusText" id="status">Turno: Blancas</p>
+        <span class="pill" id="gameState">En juego</span>
+      </div>
+    </section>
+
+    <!-- DERECHA: CONTROLES -->
+    <aside class="card right">
+      <div class="controls">
+        <div>
+          <p class="label">Pega una FEN aquí</p>
+          <input id="fenInput" class="input" type="text" spellcheck="false"
+                 placeholder="Ej: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" />
+          <div class="errorBox" id="fenError"></div>
+        </div>
+
+        <div class="row">
+          <button class="btn btn-ghost" id="loadFenBtn" type="button">Cargar Posición</button>
+          <button class="btn btn-ghost" id="flipBtn" type="button">Girar Tablero</button>
+        </div>
+
+        <button class="btn btn-cta btn-wide" id="copyFenBtn" type="button">Copiar FEN Actual</button>
+
+        <p class="hint">
+          Tip: Si mueves un peón a la última fila, se promociona automáticamente a dama (Q) para mantenerlo simple.
+        </p>
+      </div>
+    </aside>
+  </div>
+
+  <div class="toast" id="toast">Copiado</div>
+
+  <!-- Dependencias (orden importante) -->
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"
+          integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
+          crossorigin="anonymous"></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
+
+  <script>
+    (function(){
+      // --- Estado global
+      var game = new Chess(); // lógica (chess.js)
+      var board = null;       // UI (chessboard.js)
+
+      // --- Helpers UI
+      var $fenInput = $('#fenInput');
+      var $fenError = $('#fenError');
+      var $status   = $('#status');
+      var $gameState= $('#gameState');
+      var $fenShort = $('#fenShort');
+      var $copyBtn  = $('#copyFenBtn');
+      var $toast    = $('#toast');
+      var $pasteLoadBtn = $('#pasteLoadBtn');
+
+      function showError(msg){
+        $fenError.text(msg).show();
+      }
+      function clearError(){
+        $fenError.hide().text('');
+      }
+
+      function showToast(msg){
+        $toast.text(msg || 'Listo').addClass('show');
+        setTimeout(function(){ $toast.removeClass('show'); }, 1400);
+      }
+
+      function safeFenBadge(fen){
+        // mini etiqueta sin saturar: muestra turno y contador de jugada
+        // fen: "... w ... ... ... <halfmove> <fullmove>"
+        var parts = (fen || '').split(' ');
+        if(parts.length < 6) return 'FEN listo';
+        var side = parts[1] === 'w' ? 'w' : 'b';
+        var move = parts[5];
+        return 'Turno ' + (side === 'w' ? 'w' : 'b') + ' · Jug ' + move;
+      }
+
+      function updateStatus(){
+  var turn = game.turn() === 'w' ? 'Blancas' : 'Negras';
+
+  // Detecta final por la forma más confiable
+  var legalMoves = game.moves().length;
+
+  if (legalMoves === 0) {
+    if (game.in_check()) {
+      // Si no hay movimientos y hay jaque => mate
+      $status.text('Jaque mate. Ganaron ' + (turn === 'Blancas' ? 'Negras' : 'Blancas') + '.');
+      $gameState.text('Jaque mate');
+      $gameState.css('border-color','rgba(255,79,109,.45)');
+    } else {
+      // Si no hay movimientos y no hay jaque => ahogado (tablas)
+      $status.text('Empate / tablas (ahogado).');
+      $gameState.text('Tablas');
+      $gameState.css('border-color','rgba(255,255,255,.18)');
+    }
+    $fenShort.text(safeFenBadge(game.fen()));
+    return;
+  }
+
+  // Otras tablas (repetición, 50-mov, material insuficiente)
+  if (game.in_draw && game.in_draw()) {
+    $status.text('Empate / tablas.');
+    $gameState.text('Tablas');
+    $gameState.css('border-color','rgba(255,255,255,.18)');
+    $fenShort.text(safeFenBadge(game.fen()));
+    return;
+  }
+
+  if (game.in_check && game.in_check()) {
+    $status.text('Turno: ' + turn + ' (¡Jaque!)');
+    $gameState.text('Jaque');
+    $gameState.css('border-color','rgba(79,124,255,.55)');
+  } else {
+    $status.text('Turno: ' + turn);
+    $gameState.text('En juego');
+    $gameState.css('border-color','rgba(255,255,255,.12)');
+  }
+
+  $fenShort.text(safeFenBadge(game.fen()));
+}
+
+
+      // --- Callbacks del tablero
+      function onDragStart(source, piece){
+        // Bloquea movimientos si el juego terminó
+        if (game.game_over && game.game_over()) return false;
+
+        // Solo permitir mover piezas del color del turno
+        if (game.turn() === 'w' && piece.search(/^b/) !== -1) return false;
+        if (game.turn() === 'b' && piece.search(/^w/) !== -1) return false;
+
+        clearError();
+      }
+
+      function onDrop(source, target){
+        // Validación crítica: intenta el movimiento en chess.js
+        var move = game.move({
+          from: source,
+          to: target,
+          promotion: 'q' // promoción simple a dama
+        });
+
+        // Si es ilegal -> snapback
+        if (move === null) return 'snapback';
+
+        updateStatus();
+      }
+
+      function onSnapEnd(){
+        // sincroniza la UI con la posición real en chess.js
+        board.position(game.fen());
+      }
+
+      // --- Init tablero
+      function initBoard(){
+  board = Chessboard('board', {
+  position: 'start',
+  draggable: true,
+
+  pieceTheme: 'https://huggingface.co/spaces/ggml-org/wchess/resolve/cff6aed24fdbaab44a699045dec13afd4f1a7e48/img/chesspieces/wikipedia/{piece}.png',
+
+  onDragStart: onDragStart,
+  onDrop: onDrop,
+  onSnapEnd: onSnapEnd
+});
+
+  updateStatus();
+}
+
+
+      function applyFenFromText(fen, toastMsg){
+        fen = (fen || '').trim();
+        if(!fen){
+          showError('No hay texto para cargar. Copia una FEN primero.');
+          return false;
+        }
+
+        // chess.js valida FEN con load()
+        var ok = false;
+        try {
+          ok = game.load(fen);
+        } catch(e){
+          ok = false;
+        }
+
+        if(!ok){
+          showError('FEN inválida. Revisa formato y espacios (debe tener 6 campos).');
+          return false;
+        }
+
+        clearError();
+        $fenInput.val(game.fen());
+        board.position(game.fen(), true);
+        updateStatus();
+        if(toastMsg) showToast(toastMsg);
+        return true;
+      }
+
+
+      // --- Acciones de botones
+      $('#loadFenBtn').on('click', function(){
+        applyFenFromText($fenInput.val(), 'Posición cargada');
+      });
+
+      $pasteLoadBtn.on('click', function(){
+        clearError();
+
+        if(!(navigator.clipboard && navigator.clipboard.readText)){
+          showError('Tu navegador no permite leer el portapapeles aquí. Prueba con Chrome/Edge y abre la página desde http://localhost (no file://).');
+          return;
+        }
+
+        // La lectura del portapapeles DEBE ocurrir tras un gesto del usuario (este click).
+        navigator.clipboard.readText()
+          .then(function(text){
+            text = (text || '').trim();
+            if(!text){
+              showError('Tu portapapeles está vacío. Copia una FEN y vuelve a intentar.');
+              return;
+            }
+            $fenInput.val(text);
+            applyFenFromText(text, 'Pegado y cargado');
+          })
+          .catch(function(err){
+            // Manejo de permisos y bloqueos (NotAllowedError suele indicar falta de permiso o contexto inseguro)
+            var msg = 'No pude leer el portapapeles. ';
+            if (err && (err.name === 'NotAllowedError' || err.name === 'SecurityError')) {
+              msg += 'Dale permiso a Chrome cuando lo pida. Si abriste el archivo como "file://", el navegador puede bloquearlo: abre la página desde un servidor local (por ejemplo: VS Code Live Server o http://localhost).';
+            } else {
+              msg += 'Intenta de nuevo o pega la FEN manualmente en el campo.';
+            }
+            showError(msg);
+          });
+      });
+
+      
+      $('#flipBtn').on('click', function(){
+        board.flip();
+        showToast('Tablero girado');
+      });
+
+      function copyToClipboard(text){
+        // Preferencia moderna
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          return navigator.clipboard.writeText(text);
+        }
+        // Fallback
+        return new Promise(function(resolve, reject){
+          try{
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            var ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+            ok ? resolve() : reject(new Error('copy_failed'));
+          }catch(err){
+            reject(err);
+          }
+        });
+      }
+
+      $('#copyFenBtn').on('click', function(){
+        var fen = game.fen();
+        copyToClipboard(fen)
+          .then(function(){
+            var original = $copyBtn.text();
+            $copyBtn.text('¡Copiado!');
+            showToast('FEN copiada');
+            setTimeout(function(){ $copyBtn.text(original); }, 2000);
+          })
+          .catch(function(){
+            showToast('No se pudo copiar');
+            showError('No pude copiar al portapapeles (permiso del navegador). Copia manualmente: ' + fen);
+          });
+      });
+
+      // --- Responsivo: re-calcular tamaño del tablero
+      function resizeBoard(){
+        if(board && board.resize) board.resize();
+      }
+      $(window).on('resize', function(){
+        resizeBoard();
+      });
+
+      // --- Arranque
+      initBoard();
+    })();
+  </script>
+</body>
+</html>
