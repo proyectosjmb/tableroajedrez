@@ -13,7 +13,6 @@
     :root{
       --bg:#0b0c10;
       --card:#11131a;
-      --card2:#0f1117;
       --text:#e9ecf1;
       --muted:#a8b0bf;
       --border:rgba(255,255,255,.10);
@@ -23,6 +22,9 @@
       --danger:#ff4f6d;
       --ok:#34d399;
       --radius:16px;
+      --arrow: rgba(79,124,255,.92);
+      --arrow2: rgba(79,124,255,.55);
+      --markRed: rgba(255,79,109,.30);
     }
 
     *{ box-sizing:border-box; }
@@ -114,11 +116,48 @@
     #boardWrap{
       width: min(92vw, 520px);
     }
+
+    /* “cáscara” del tablero (para poder poner overlays encima) */
+    #boardShell{
+      width:100%;
+      position:relative;
+      border-radius: 12px;
+      overflow:hidden;
+      box-shadow: 0 10px 22px rgba(0,0,0,.35);
+    }
+
     #board{
       width: 100%;
-      border-radius: 12px;
-      overflow:hidden; /* redondea el tablero */
-      box-shadow: 0 10px 22px rgba(0,0,0,.35);
+      /* el redondeo/overflow viven en #boardShell */
+    }
+
+    /* Capa SVG para flechas */
+    #arrowLayer{
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      pointer-events:none;
+      z-index: 5; /* encima de piezas */
+    }
+
+    /* Asegura que las casillas acepten overlays */
+    #board .square-55d63{
+      position: relative;
+    }
+
+    /* Casillas marcadas en rojo (click derecho o Shift+Click) */
+    #board .square-55d63.mark-red::after{
+      content:"";
+      position:absolute;
+      inset:0;
+      background: var(--markRed);
+      z-index: 2;
+    }
+
+    /* Casilla seleccionada (click normal) */
+    #board .square-55d63.sq-selected{
+      box-shadow: inset 0 0 0 3px rgba(79,124,255,.85);
     }
 
     .statusBar{
@@ -211,11 +250,6 @@
 
     .btn-ghost:hover{ background: rgba(255,255,255,.06); }
 
-    .btn-danger{
-      background: rgba(255,79,109,.10);
-      border-color: rgba(255,79,109,.35);
-    }
-
     .btn-wide{
       width:100%;
       padding:14px 16px;
@@ -245,6 +279,7 @@
       opacity:0;
       pointer-events:none;
       transition: opacity .18s ease, transform .18s ease;
+      z-index: 20;
     }
     .toast.show{
       opacity:1;
@@ -277,14 +312,22 @@
         <header>
           <div>
             <h1>Tablero de entrenamiento</h1>
-            <p>Arrastra y suelta piezas. Movimientos ilegales hacen <em>snapback</em>. Carga/extrae FEN en un clic.</p>
+            <p>Click normal: flechas de jugadas posibles. Click derecho o Shift+Click: marcar casilla roja.</p>
           </div>
-          <div class="headerActions"><button class="btn btn-ghost btn-mini" id="pasteLoadBtn" type="button">📋 Pegar FEN y Cargar</button><span class="pill" id="fenShort">FEN listo</span></div>
+
+          <div class="headerActions">
+            <button class="btn btn-ghost btn-mini" id="pasteFenBtn" type="button">📋 Pegar FEN y Cargar</button>
+            <button class="btn btn-ghost btn-mini" id="clearMarksBtn" type="button">🧹 Limpiar marcas</button>
+            <span class="pill" id="fenShort">FEN listo</span>
+          </div>
         </header>
       </div>
 
       <div id="boardWrap">
-        <div id="board"></div>
+        <div id="boardShell">
+          <div id="board"></div>
+          <svg id="arrowLayer" aria-hidden="true"></svg>
+        </div>
       </div>
 
       <div class="statusBar">
@@ -311,21 +354,23 @@
         <button class="btn btn-cta btn-wide" id="copyFenBtn" type="button">Copiar FEN Actual</button>
 
         <p class="hint">
-          Tip: Si mueves un peón a la última fila, se promociona automáticamente a dama (Q) para mantenerlo simple.
+          Tip: Promoción automática a dama (Q). Para limpiar flechas: click fuera del tablero o “Limpiar marcas”.
         </p>
       </div>
     </aside>
   </div>
 
-  <div class="toast" id="toast">Copiado</div>
+  <div class="toast" id="toast">Listo</div>
 
   <!-- Dependencias (orden importante) -->
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"
           integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
           crossorigin="anonymous"></script>
 
+  <!-- Chess.js UMD (evita el problema de 'export') -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 
+  <!-- Chessboard.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
 
   <script>
@@ -333,6 +378,10 @@
       // --- Estado global
       var game = new Chess(); // lógica (chess.js)
       var board = null;       // UI (chessboard.js)
+
+      var isDragging = false;
+      var selectedSquare = null;
+      var markedRed = {}; // {e4:true, ...}
 
       // --- Helpers UI
       var $fenInput = $('#fenInput');
@@ -342,7 +391,9 @@
       var $fenShort = $('#fenShort');
       var $copyBtn  = $('#copyFenBtn');
       var $toast    = $('#toast');
-      var $pasteLoadBtn = $('#pasteLoadBtn');
+
+      var $arrowLayer = $('#arrowLayer');
+      var $boardShell = $('#boardShell');
 
       function showError(msg){
         $fenError.text(msg).show();
@@ -357,8 +408,6 @@
       }
 
       function safeFenBadge(fen){
-        // mini etiqueta sin saturar: muestra turno y contador de jugada
-        // fen: "... w ... ... ... <halfmove> <fullmove>"
         var parts = (fen || '').split(' ');
         if(parts.length < 6) return 'FEN listo';
         var side = parts[1] === 'w' ? 'w' : 'b';
@@ -367,52 +416,215 @@
       }
 
       function updateStatus(){
-  var turn = game.turn() === 'w' ? 'Blancas' : 'Negras';
+        var turn = game.turn() === 'w' ? 'Blancas' : 'Negras';
+        var legalMoves = game.moves().length;
 
-  // Detecta final por la forma más confiable
-  var legalMoves = game.moves().length;
+        if (legalMoves === 0) {
+          if (game.in_check()) {
+            $status.text('Jaque mate. Ganaron ' + (turn === 'Blancas' ? 'Negras' : 'Blancas') + '.');
+            $gameState.text('Jaque mate');
+            $gameState.css('border-color','rgba(255,79,109,.45)');
+          } else {
+            $status.text('Empate / tablas (ahogado).');
+            $gameState.text('Tablas');
+            $gameState.css('border-color','rgba(255,255,255,.18)');
+          }
+          $fenShort.text(safeFenBadge(game.fen()));
+          return;
+        }
 
-  if (legalMoves === 0) {
-    if (game.in_check()) {
-      // Si no hay movimientos y hay jaque => mate
-      $status.text('Jaque mate. Ganaron ' + (turn === 'Blancas' ? 'Negras' : 'Blancas') + '.');
-      $gameState.text('Jaque mate');
-      $gameState.css('border-color','rgba(255,79,109,.45)');
-    } else {
-      // Si no hay movimientos y no hay jaque => ahogado (tablas)
-      $status.text('Empate / tablas (ahogado).');
-      $gameState.text('Tablas');
-      $gameState.css('border-color','rgba(255,255,255,.18)');
-    }
-    $fenShort.text(safeFenBadge(game.fen()));
-    return;
-  }
+        if (game.in_draw && game.in_draw()) {
+          $status.text('Empate / tablas.');
+          $gameState.text('Tablas');
+          $gameState.css('border-color','rgba(255,255,255,.18)');
+          $fenShort.text(safeFenBadge(game.fen()));
+          return;
+        }
 
-  // Otras tablas (repetición, 50-mov, material insuficiente)
-  if (game.in_draw && game.in_draw()) {
-    $status.text('Empate / tablas.');
-    $gameState.text('Tablas');
-    $gameState.css('border-color','rgba(255,255,255,.18)');
-    $fenShort.text(safeFenBadge(game.fen()));
-    return;
-  }
+        if (game.in_check && game.in_check()) {
+          $status.text('Turno: ' + turn + ' (¡Jaque!)');
+          $gameState.text('Jaque');
+          $gameState.css('border-color','rgba(79,124,255,.55)');
+        } else {
+          $status.text('Turno: ' + turn);
+          $gameState.text('En juego');
+          $gameState.css('border-color','rgba(255,255,255,.12)');
+        }
 
-  if (game.in_check && game.in_check()) {
-    $status.text('Turno: ' + turn + ' (¡Jaque!)');
-    $gameState.text('Jaque');
-    $gameState.css('border-color','rgba(79,124,255,.55)');
-  } else {
-    $status.text('Turno: ' + turn);
-    $gameState.text('En juego');
-    $gameState.css('border-color','rgba(255,255,255,.12)');
-  }
+        $fenShort.text(safeFenBadge(game.fen()));
+      }
 
-  $fenShort.text(safeFenBadge(game.fen()));
-}
+      // ---------------------------
+      // Flechas (posibles jugadas)
+      // ---------------------------
+      function clearArrows(){
+        $arrowLayer.empty();
+      }
 
+      function getSquareFromEl(el){
+        var cls = el.className || '';
+        var m = cls.match(/square-([a-h][1-8])/);
+        return m ? m[1] : null;
+      }
 
-      // --- Callbacks del tablero
+      function squareCenter(square){
+        var sqEl = document.querySelector('#board .square-' + square);
+        if(!sqEl) return null;
+        var r = sqEl.getBoundingClientRect();
+        var br = $boardShell[0].getBoundingClientRect();
+        return {
+          x: (r.left - br.left) + r.width/2,
+          y: (r.top - br.top) + r.height/2,
+          size: r.width
+        };
+      }
+
+      function ensureSvgSize(){
+        var br = $boardShell[0].getBoundingClientRect();
+        $arrowLayer.attr('viewBox', '0 0 ' + br.width + ' ' + br.height);
+        $arrowLayer.attr('preserveAspectRatio', 'none');
+      }
+
+      function drawArrowsFrom(square){
+        clearArrows();
+        ensureSvgSize();
+
+        if(!square) return;
+
+        var moves = [];
+        try{
+          // Permite mostrar jugadas posibles incluso si eliges una pieza del color que NO tiene el turno
+          var piece = game.get(square); // {type:'p', color:'w'|'b'} o null
+          var turnColor = game.turn();
+          if(piece && piece.color && piece.color !== turnColor){
+            // Clona la posición pero cambiando el turno para poder calcular movimientos legales de ese color
+            var parts = game.fen().split(' ');
+            if(parts.length >= 2){
+              parts[1] = piece.color; // 'w' o 'b'
+              var tmp = new Chess();
+              if(tmp.load(parts.join(' '))){
+                moves = tmp.moves({ square: square, verbose: true }) || [];
+              }else{
+                moves = [];
+              }
+            }
+          }else{
+            moves = game.moves({ square: square, verbose: true }) || [];
+          }
+        }catch(e){
+          moves = [];
+        }
+        if(!moves.length) return;
+
+        // Dedup por destino (promociones generan múltiples)
+        var seen = {};
+        var dedup = [];
+        for(var i=0;i<moves.length;i++){
+          var to = moves[i].to;
+          if(seen[to]) continue;
+          seen[to] = true;
+          dedup.push({from: square, to: to});
+        }
+
+        var fromC = squareCenter(square);
+        if(!fromC) return;
+
+        var sw = Math.max(3, fromC.size * 0.10);
+        var head = Math.max(8, fromC.size * 0.22);
+
+        // SVG defs (arrowhead)
+        var defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        var marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+        marker.setAttribute('id', 'arrowHead');
+        marker.setAttribute('markerWidth', head);
+        marker.setAttribute('markerHeight', head);
+        marker.setAttribute('refX', head * 0.7);
+        marker.setAttribute('refY', head * 0.5);
+        marker.setAttribute('orient', 'auto');
+        marker.setAttribute('markerUnits', 'userSpaceOnUse');
+
+        var poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        poly.setAttribute('points', '0,0 ' + head + ',' + (head/2) + ' 0,' + head);
+        poly.setAttribute('fill', 'var(--arrow)');
+        marker.appendChild(poly);
+        defs.appendChild(marker);
+        $arrowLayer[0].appendChild(defs);
+
+        for(var j=0;j<dedup.length;j++){
+          var toC = squareCenter(dedup[j].to);
+          if(!toC) continue;
+
+          // “recorta” un poquito para que la flecha no tape el centro de la casilla destino
+          var dx = toC.x - fromC.x;
+          var dy = toC.y - fromC.y;
+          var dist = Math.sqrt(dx*dx + dy*dy) || 1;
+          var trim = Math.max(10, fromC.size * 0.18);
+          var x2 = toC.x - (dx/dist)*trim;
+          var y2 = toC.y - (dy/dist)*trim;
+
+          var line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          line.setAttribute('x1', fromC.x);
+          line.setAttribute('y1', fromC.y);
+          line.setAttribute('x2', x2);
+          line.setAttribute('y2', y2);
+          line.setAttribute('stroke', 'var(--arrow)');
+          line.setAttribute('stroke-width', sw);
+          line.setAttribute('stroke-linecap', 'round');
+          line.setAttribute('opacity', '0.92');
+          line.setAttribute('marker-end', 'url(#arrowHead)');
+          $arrowLayer[0].appendChild(line);
+        }
+      }
+
+      function clearSelection(){
+        selectedSquare = null;
+        clearArrows();
+        $('#board .square-55d63').removeClass('sq-selected');
+      }
+
+      function setSelectedSquare(square){
+        $('#board .square-55d63').removeClass('sq-selected');
+        selectedSquare = square;
+        if(square){
+          $('#board .square-' + square).addClass('sq-selected');
+        }
+        drawArrowsFrom(square);
+      }
+
+      // ---------------------------
+      // Marcas rojas
+      // ---------------------------
+      function applyRedMark(square, on){
+        var $sq = $('#board .square-' + square);
+        if(on){
+          markedRed[square] = true;
+          $sq.addClass('mark-red');
+        }else{
+          delete markedRed[square];
+          $sq.removeClass('mark-red');
+        }
+      }
+
+      function toggleRed(square){
+        if(!square) return;
+        applyRedMark(square, !markedRed[square]);
+      }
+
+      function reapplyRedMarks(){
+        $('#board .square-55d63').removeClass('mark-red');
+        for(var sq in markedRed){
+          if(markedRed.hasOwnProperty(sq)){
+            $('#board .square-' + sq).addClass('mark-red');
+          }
+        }
+      }
+
+      // ---------------------------
+      // Callbacks del tablero
+      // ---------------------------
       function onDragStart(source, piece){
+        isDragging = true;
+
         // Bloquea movimientos si el juego terminó
         if (game.game_over && game.game_over()) return false;
 
@@ -421,52 +633,58 @@
         if (game.turn() === 'b' && piece.search(/^w/) !== -1) return false;
 
         clearError();
+        clearSelection(); // al arrastrar, quita flechas
       }
 
       function onDrop(source, target){
-        // Validación crítica: intenta el movimiento en chess.js
         var move = game.move({
           from: source,
           to: target,
-          promotion: 'q' // promoción simple a dama
+          promotion: 'q'
         });
 
-        // Si es ilegal -> snapback
         if (move === null) return 'snapback';
 
         updateStatus();
       }
 
       function onSnapEnd(){
-        // sincroniza la UI con la posición real en chess.js
+        isDragging = false;
         board.position(game.fen());
+        // tras mover, se conservan marcas rojas, pero se quitan flechas
+        clearSelection();
+        reapplyRedMarks();
       }
 
-      // --- Init tablero
+      // ---------------------------
+      // Init tablero
+      // ---------------------------
       function initBoard(){
-  board = Chessboard('board', {
-  position: 'start',
-  draggable: true,
+        board = Chessboard('board', {
+          position: 'start',
+          draggable: true,
+          pieceTheme: 'https://huggingface.co/spaces/ggml-org/wchess/resolve/cff6aed24fdbaab44a699045dec13afd4f1a7e48/img/chesspieces/wikipedia/{piece}.png',
+          onDragStart: onDragStart,
+          onDrop: onDrop,
+          onSnapEnd: onSnapEnd
+        });
 
-  pieceTheme: 'https://huggingface.co/spaces/ggml-org/wchess/resolve/cff6aed24fdbaab44a699045dec13afd4f1a7e48/img/chesspieces/wikipedia/{piece}.png',
+        updateStatus();
+        ensureSvgSize();
+      }
 
-  onDragStart: onDragStart,
-  onDrop: onDrop,
-  onSnapEnd: onSnapEnd
-});
-
-  updateStatus();
-}
-
-
-      function applyFenFromText(fen, toastMsg){
+      // ---------------------------
+      // FEN load helper
+      // ---------------------------
+      function loadFenFromString(fen, opts){
+        opts = opts || {};
         fen = (fen || '').trim();
+
         if(!fen){
-          showError('No hay texto para cargar. Copia una FEN primero.');
+          showError('No hay texto para cargar como FEN.');
           return false;
         }
 
-        // chess.js valida FEN con load()
         var ok = false;
         try {
           ok = game.load(fen);
@@ -480,62 +698,64 @@
         }
 
         clearError();
-        $fenInput.val(game.fen());
         board.position(game.fen(), true);
         updateStatus();
-        if(toastMsg) showToast(toastMsg);
+        clearSelection();
+        reapplyRedMarks();
+        if(opts.toast) showToast(opts.toast);
         return true;
       }
 
-
-      // --- Acciones de botones
+      // ---------------------------
+      // Acciones de botones
+      // ---------------------------
       $('#loadFenBtn').on('click', function(){
-        applyFenFromText($fenInput.val(), 'Posición cargada');
+        loadFenFromString($fenInput.val(), { toast: 'Posición cargada' });
       });
 
-      $pasteLoadBtn.on('click', function(){
-        clearError();
-
-        if(!(navigator.clipboard && navigator.clipboard.readText)){
-          showError('Tu navegador no permite leer el portapapeles aquí. Prueba con Chrome/Edge y abre la página desde http://localhost (no file://).');
-          return;
-        }
-
-        // La lectura del portapapeles DEBE ocurrir tras un gesto del usuario (este click).
-        navigator.clipboard.readText()
-          .then(function(text){
-            text = (text || '').trim();
-            if(!text){
-              showError('Tu portapapeles está vacío. Copia una FEN y vuelve a intentar.');
-              return;
-            }
-            $fenInput.val(text);
-            applyFenFromText(text, 'Pegado y cargado');
-          })
-          .catch(function(err){
-            // Manejo de permisos y bloqueos (NotAllowedError suele indicar falta de permiso o contexto inseguro)
-            var msg = 'No pude leer el portapapeles. ';
-            if (err && (err.name === 'NotAllowedError' || err.name === 'SecurityError')) {
-              msg += 'Dale permiso a Chrome cuando lo pida. Si abriste el archivo como "file://", el navegador puede bloquearlo: abre la página desde un servidor local (por ejemplo: VS Code Live Server o http://localhost).';
-            } else {
-              msg += 'Intenta de nuevo o pega la FEN manualmente en el campo.';
-            }
-            showError(msg);
-          });
-      });
-
-      
       $('#flipBtn').on('click', function(){
         board.flip();
+        ensureSvgSize();
+        if(selectedSquare) drawArrowsFrom(selectedSquare);
         showToast('Tablero girado');
       });
 
+      $('#clearMarksBtn').on('click', function(){
+        markedRed = {};
+        clearSelection();
+        reapplyRedMarks();
+        showToast('Marcas limpiadas');
+      });
+
+      // Pegado rápido: lee portapapeles -> input -> carga
+      $('#pasteFenBtn').on('click', async function(){
+        clearError();
+
+        if(!navigator.clipboard || !navigator.clipboard.readText){
+          showError('Tu navegador no permite leer el portapapeles aquí. Pega manualmente la FEN en el campo y usa “Cargar Posición”.');
+          $fenInput.focus();
+          return;
+        }
+
+        try{
+          var text = await navigator.clipboard.readText();
+          $fenInput.val((text || '').trim());
+          var ok = loadFenFromString(text, { toast: 'FEN pegada y cargada' });
+          if(!ok){
+            // si falló, deja el texto en el input para que lo edites
+            $fenInput.focus();
+          }
+        }catch(err){
+          // Lo más común: abrir como file:// o permiso denegado
+          showError('No pude leer el portapapeles. Abre esta página desde un servidor (por ejemplo GitHub Pages o localhost) y permite el permiso de portapapeles. También puedes pegar manualmente la FEN en el campo.');
+          $fenInput.focus();
+        }
+      });
+
       function copyToClipboard(text){
-        // Preferencia moderna
         if (navigator.clipboard && navigator.clipboard.writeText) {
           return navigator.clipboard.writeText(text);
         }
-        // Fallback
         return new Promise(function(resolve, reject){
           try{
             var ta = document.createElement('textarea');
@@ -569,9 +789,58 @@
           });
       });
 
-      // --- Responsivo: re-calcular tamaño del tablero
+      // ---------------------------
+      // Interacción en tablero (flechas / marcas)
+      // ---------------------------
+      // Click normal: seleccionar casilla -> flechas de jugadas posibles (si hay)
+      // Shift+Click o Click derecho: marcar casilla en rojo
+      $('#board').on('click', '.square-55d63', function(e){
+        if(isDragging) return;
+
+        var sq = getSquareFromEl(this);
+        if(!sq) return;
+
+        if(e.shiftKey){
+          toggleRed(sq);
+          return;
+        }
+
+        // Click normal
+        if(selectedSquare === sq){
+          clearSelection();
+        }else{
+          setSelectedSquare(sq);
+        }
+      });
+
+      // Click derecho: marcar en rojo (sin menú)
+      $('#board').on('contextmenu', '.square-55d63', function(e){
+        e.preventDefault();
+        if(isDragging) return;
+        var sq = getSquareFromEl(this);
+        toggleRed(sq);
+      });
+
+      // Click fuera del tablero: limpia flechas/selección (no borra marcas rojas)
+      $(document).on('mousedown', function(e){
+        if($(e.target).closest('#boardShell').length === 0){
+          clearSelection();
+        }
+      });
+
+      // Tecla ESC: limpia flechas/selección
+      $(document).on('keydown', function(e){
+        if(e.key === 'Escape'){
+          clearSelection();
+        }
+      });
+
+      // --- Responsivo: re-calcular tamaño del tablero + flechas
       function resizeBoard(){
         if(board && board.resize) board.resize();
+        ensureSvgSize();
+        if(selectedSquare) drawArrowsFrom(selectedSquare);
+        reapplyRedMarks();
       }
       $(window).on('resize', function(){
         resizeBoard();
